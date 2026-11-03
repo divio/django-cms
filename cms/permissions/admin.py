@@ -15,7 +15,12 @@ from cms.pages.admin.forms import (
     PagePermissionInlineAdminForm,
     ViewRestrictionInlineAdminForm,
 )
-from cms.permissions import page_permissions, services as permission_services, utils as permissions
+from cms.pages.permissions import get_page_permissions
+from cms.permissions import (
+    checks as permission_checks,
+    services as permission_services,
+    utils as permissions,
+)
 from cms.shared.operations import OperationContext
 from cms.utils.conf import get_cms_setting
 from cms.utils.helpers import classproperty
@@ -43,11 +48,7 @@ class PagePermissionInlineAdmin(TabularInline):
     def has_change_permission(self, request, obj=None):
         if not obj:
             return False
-        return page_permissions.user_can_change_page_permissions(
-            request.user,
-            page=obj,
-            site=obj.site,
-        )
+        return get_page_permissions(request.user).can_change_page_permissions(obj)
 
     def has_add_permission(self, request, obj=None):
         return self.has_change_permission(request, obj)
@@ -91,7 +92,7 @@ class PagePermissionInlineAdmin(TabularInline):
         permissions which are available for him. E.g. if user does not haves
         can_change flag, he can't change assign can_change permissions.
         """
-        exclude = self.exclude or []
+        exclude = list(self.exclude or [])
         if obj:
             user = request.user
             if not obj.has_add_permission(user):
@@ -106,11 +107,23 @@ class PagePermissionInlineAdmin(TabularInline):
                 exclude.append('can_move_page')
 
         kwargs['exclude'] = exclude
-        self.form._page = obj
         formset_cls = super().get_formset(request, obj=obj, **kwargs)
+        formset_cls.form._page = obj
+        formset_cls.form._current_user = request.user
         qs = self.get_queryset(request)
         if obj is not None:
             qs = qs.filter(page=obj)
+        # Preserving hidden flags alone would let a manager transfer them via
+        # user/group, change their scope via grant_on, or revoke them by deleting
+        # the row. Like global grants, these rows must be outside the manager's
+        # editable queryset. Django also uses this queryset to resolve posted
+        # inline IDs, so crafted edits and deletions cannot reach them.
+        qs = qs.filter(**{
+            field: False for field in exclude
+            if field in self.model.get_all_permissions()
+        })
+        if obj is not None:
+            qs = permission_checks.manageable_page_grants(qs, request.user, obj)
         formset_cls._queryset = qs
         return formset_cls
 
