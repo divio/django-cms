@@ -75,6 +75,14 @@ Next, follow the official installation guide and tutorials:
 
 Using Docker? Check out our `django-cms-quickstart project <https://github.com/django-cms/django-cms-quickstart>`_.
 
+One-Click Deploy
+================
+
+.. image:: https://d16t0pc4846x52.cloudfront.net/deploylobe.svg
+   :target: https://repocloud.io/details/django%20CMS/
+   :alt: Deploy on RepoCloud
+   :height: 42px
+
 Documentation
 =============
 
