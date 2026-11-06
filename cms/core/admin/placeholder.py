@@ -1,4 +1,3 @@
-import json
 import warnings
 from functools import wraps
 
@@ -14,6 +13,7 @@ from django.http import (
     HttpResponseForbidden,
     HttpResponseNotAllowed,
     HttpResponseNotFound,
+    JsonResponse,
 )
 from django.shortcuts import get_list_or_404, get_object_or_404
 from django.template.response import TemplateResponse
@@ -577,7 +577,7 @@ class PlaceholderAdmin(BaseEditableAdminMixin, admin.ModelAdmin):
                 target_placeholder,
             )
         data = get_plugin_tree(request, new_plugins)
-        return HttpResponse(json.dumps(data), content_type='application/json')
+        return JsonResponse(data)
 
     def _copy_plugin_to_clipboard(self, request, target_placeholder):
         source_language = request.POST['source_language']
@@ -781,7 +781,10 @@ class PlaceholderAdmin(BaseEditableAdminMixin, admin.ModelAdmin):
         if new_plugin and fetch_tree:
             root = (new_plugin.parent or new_plugin)
             new_plugins = [root] + list(root.get_descendants())
-        data = get_plugin_tree(request, new_plugins, target_plugin=new_plugins[0])
+        if new_plugins:
+            data = get_plugin_tree(request, new_plugins, target_plugin=new_plugins[0])
+        else:
+            data = {"html": "", "plugins": []}
         if old_parent and old_parent not in new_plugins and "content" in data:
             # Update previous parent and its children
             old_parent_plugins = list(downcast_plugins([old_parent] + list(old_parent.get_descendants()), select_placeholder=True))
@@ -793,7 +796,7 @@ class PlaceholderAdmin(BaseEditableAdminMixin, admin.ModelAdmin):
             if move_to_clipboard:
                 data["content"].pop(0)
         data["source_placeholder_id"] = source_placeholder.pk
-        return HttpResponse(json.dumps(data), content_type='application/json')
+        return JsonResponse(data)
 
     def _paste_plugin(self, request, plugin, target_language,
                       target_placeholder, target_position, target_parent=None):
