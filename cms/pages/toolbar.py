@@ -13,6 +13,7 @@ from django.utils.translation import gettext_lazy as _, override as force_langua
 from cms.api import can_change_page
 from cms.constants import TEMPLATE_INHERITANCE_MAGIC
 from cms.models import Page, PageContent, PageType
+from cms.pages.permissions import get_page_permissions
 from cms.permissions import page_permissions
 from cms.permissions.page_permissions import user_can_change_page, user_can_delete_page
 from cms.shared.editing_urls import get_object_preview_url
@@ -184,14 +185,7 @@ class PageToolbar(CMSToolbar):
                     )
 
     def change_admin_menu(self):
-        can_change_page = self.has_page_change_permission()
-
-        if not can_change_page:
-            # Check if the user has permissions to change at least one page
-            can_change_page = page_permissions.user_can_change_at_least_one_page(
-                user=self.request.user,
-                site=self.current_site,
-            )
+        can_change_page = get_page_permissions(self.request.user).can_change_any_page(self.current_site)
 
         if not self._changed_admin_menu and can_change_page:
             admin_menu = self.toolbar.get_or_create_menu(ADMIN_MENU_IDENTIFIER)
