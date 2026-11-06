@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from collections import namedtuple
 
@@ -23,6 +22,7 @@ from django.http import (
     HttpResponseBadRequest,
     HttpResponseForbidden,
     HttpResponseRedirect,
+    JsonResponse,
     QueryDict,
 )
 from django.shortcuts import get_object_or_404, render
@@ -395,7 +395,7 @@ class PageAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
             if not query_term:
                 # ``icontains`` matches every page for an empty term, which would
                 # turn this autocomplete into a full listing of the site.
-                return HttpResponse(json.dumps([]), content_type="application/json")
+                return JsonResponse([], safe=False)
 
             language_code = request.GET.get("language_code", settings.LANGUAGE_CODE)
             matching_pages = (
@@ -421,7 +421,7 @@ class PageAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
                         "redirect_url": page.get_absolute_url(language=language_code),
                     }
                 )
-            return HttpResponse(json.dumps(results), content_type="application/json")
+            return JsonResponse(results, safe=False)
         return HttpResponseForbidden()
 
     def changelist_view(self, request, extra_context=None):
@@ -646,7 +646,7 @@ class PageAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
             return jsonify_request(HttpResponseForbidden(str(error)))
         except ValidationError as error:
             return jsonify_request(HttpResponseBadRequest(" ".join(error.messages)))
-        return HttpResponse(json.dumps({"id": new_page.pk}), content_type="application/json")
+        return JsonResponse({"id": new_page.pk})
 
     def edit_title_fields(self, request, page_id, language):
         page = self.get_object(request, object_id=page_id)

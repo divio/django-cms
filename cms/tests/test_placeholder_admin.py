@@ -242,6 +242,33 @@ class PlaceholderAdminTestCase(CMSTestCase):
         )
         return placeholder_plugin
 
+    def test_paste_empty_placeholder_returns_empty_tree(self):
+        superuser = self.get_superuser()
+        placeholder_plugin = self._create_clipboard_with_placeholder(superuser)
+        placeholder_plugin.placeholder_ref.get_plugins().delete()
+        target = Placeholder.objects.create(slot="target")
+        add_plugin(target, "LinkPlugin", "en", name="existing")
+        before = list(target.get_plugins("en").values_list("pk", "position"))
+        endpoint = self.get_move_plugin_uri(placeholder_plugin)
+
+        with self.login_user_context(superuser):
+            response = self.client.post(endpoint, {
+                "plugin_id": placeholder_plugin.pk,
+                "placeholder_id": target.pk,
+                "move_a_copy": "true",
+                "target_language": "en",
+                "target_position": 1,
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {
+            "html": "", "plugins": [], "source_placeholder_id": placeholder_plugin.placeholder_id,
+        })
+        self.assertEqual(list(target.get_plugins("en").values_list("pk", "position")), before)
+        self.assertTrue(UserSettings.objects.get(user=superuser).clipboard.get_plugins().filter(
+            pk=placeholder_plugin.pk
+        ).exists())
+
     def test_paste_placeholder_shifts_positions_of_target_language(self):
         """
         Pasting a placeholder from the clipboard shifts the positions of the

@@ -1,5 +1,4 @@
 import copy
-import json
 from functools import update_wrapper
 from urllib.parse import urlparse
 
@@ -9,6 +8,7 @@ from django.http import (
     HttpResponse,
     HttpResponseBadRequest,
     HttpResponseRedirect,
+    JsonResponse,
 )
 from django.http.request import QueryDict
 from django.urls import Resolver404, path, re_path, resolve
@@ -59,15 +59,11 @@ class SettingsAdmin(admin.ModelAdmin):
         POST should have a settings parameter
         """
         if not request.user.is_staff:
-            return HttpResponse(json.dumps(""),
-                                content_type="application/json")
+            return JsonResponse("", safe=False)
         if request.method == "POST":
             request.session['cms_settings'] = conditional_escape(request.POST['settings'])
             request.session.save()
-        return HttpResponse(
-            json.dumps(request.session.get('cms_settings', '')),
-            content_type="application/json"
-        )
+        return JsonResponse(request.session.get('cms_settings', ''), safe=False)
 
     def get_toolbar(self, request):
         from cms.toolbar.toolbar import CMSToolbar
