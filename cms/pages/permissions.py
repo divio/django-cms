@@ -68,6 +68,19 @@ class PagePermissions:
         """
         return self.can_change_page(page_content.page)
 
+    def can_change_any_page(self, site, *, fresh=False) -> bool:
+        """May the user change at least one page on ``site``?
+
+        Decides whether the page tree and the admin's "Pages" entries are shown.
+
+        ``fresh=True`` asks for an answer that reflects permission changes saved
+        earlier in the same request -- after the user edited page permissions,
+        say. It is a request about the answer, not about how it is computed: the
+        default backend then skips its permission cache, a backend without a
+        cache ignores it. Backends overriding this predicate must accept it.
+        """
+        return page_permissions.user_can_change_at_least_one_page(user=self.user, site=site, use_cache=not fresh)
+
     def can_add_page(self, site) -> bool:
         return page_permissions.user_can_add_page(self.user, site)
 
@@ -144,6 +157,14 @@ class AdminPagePermissions(BackendPagePermissions):
         # The page admin's change hook may narrow content changes, too
         return self.can_change_page(page_content.page) and self.backend.can_change_content(page_content)
 
+    # ``has_change_permission(request, None)`` reads the site from the request, so
+    # the backend answers for ``site`` and the admin's hook may only refuse.
+
+    def can_change_any_page(self, site, *, fresh=False) -> bool:
+        return super().can_change_any_page(site, fresh=fresh) and bool(
+            self.model_admin.has_change_permission(self.request, None)
+        )
+
 
 class AdminPageContentPermissions(BackendPagePermissions):
     """The same, for a ``PageContentAdmin`` whose hooks take content objects."""
@@ -155,6 +176,12 @@ class AdminPageContentPermissions(BackendPagePermissions):
 
     def can_change_content(self, page_content) -> bool:
         return bool(self.model_admin.has_change_permission(self.request, page_content))
+
+    def can_change_any_page(self, site, *, fresh=False) -> bool:
+        # The hook reads the site from the request, see ``AdminPagePermissions``
+        return super().can_change_any_page(site, fresh=fresh) and bool(
+            self.model_admin.has_change_permission(self.request, None)
+        )
 
     # ``has_add_permission(request)`` cannot say *where* a page may be added: it
     # reads the parent from the query string, while the page is created under the

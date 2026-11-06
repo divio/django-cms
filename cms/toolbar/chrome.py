@@ -2,7 +2,7 @@
 
 The site menu, the language menu, the help menu and the appearance switch belong
 to the toolbar container, not to any content container. Other containers add
-items to these menus by identifier (``ADMIN_MENU_IDENTIFIER`` and friends below),
+items to these menus by identifier (from :mod:`cms.toolbar.constants`),
 never by reaching into these classes.
 
 Moved here from ``cms.cms_toolbars``, which stays as the app's toolbar
@@ -18,36 +18,24 @@ from django.utils.translation import gettext_lazy as _
 
 from cms.shared import resolvers
 from cms.toolbar.base import CMSToolbar
+from cms.toolbar.constants import (
+    ADMIN_MENU_IDENTIFIER,
+    ADMIN_SITES_BREAK,
+    ADMINISTRATION_BREAK,
+    CLIPBOARD_BREAK,
+    HELP_MENU_BREAK,
+    HELP_MENU_IDENTIFIER,
+    LANGUAGE_MENU_IDENTIFIER,
+    SHORTCUTS_BREAK,
+    TOOLBAR_DISABLE_BREAK,
+    USER_SETTINGS_BREAK as USER_SETTINGS_BREAK,
+)
 from cms.toolbar.items import SubMenu, TemplateItem
 from cms.toolbar.pool import toolbar_pool
 from cms.utils.conf import get_cms_setting
 from cms.utils.i18n import get_language_tuple
 from cms.utils.urlutils import admin_reverse
 from menus.utils import DefaultLanguageChanger
-
-ADMIN_MENU_IDENTIFIER = "admin-menu"
-"""
-The *Site* menu (that usually shows the project's domain name, *example.com* by default).
-``ADMIN_MENU_IDENTIFIER`` allows you to get hold of this object easily using
-:meth:`cms.toolbar.toolbar.CMSToolbar.get_menu`.
-"""
-LANGUAGE_MENU_IDENTIFIER = "language-menu"
-"""
-The *Language* menu. ``LANGUAGE_MENU_IDENTIFIER`` allows you to get hold of this object
-easily using :meth:`cms.toolbar.toolbar.CMSToolbar.get_menu`.
-"""
-HELP_MENU_IDENTIFIER = "help-menu"
-"""
-The *Help* menu. ``HELP_MENU_IDENTIFIER`` allows you to get hold of this object easily
-using :meth:`cms.toolbar.toolbar.CMSToolbar.get_menu`.
-"""
-HELP_MENU_BREAK = "Help Menu Break"
-ADMIN_SITES_BREAK = "Admin Sites Break"
-ADMINISTRATION_BREAK = "Administration Break"
-CLIPBOARD_BREAK = "Clipboard Break"
-USER_SETTINGS_BREAK = "User Settings Break"
-TOOLBAR_DISABLE_BREAK = "Toolbar disable Break"
-SHORTCUTS_BREAK = "Shortcuts Break"
 
 DEFAULT_HELP_MENU_ITEMS = (
     (_("Documentation"), "https://docs.django-cms.org/en/stable/"),

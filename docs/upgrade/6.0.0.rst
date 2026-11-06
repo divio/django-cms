@@ -209,6 +209,14 @@ admin adapters ask it for every predicate without such a method. Overriding a
 what the backend allows. New code should implement a contract rather than
 override admin methods.
 
+``PagePermissions.can_change_any_page(site, *, fresh=False)`` decides whether
+the user may change at least one page on ``site``: whether the page tree, the
+admin's site selector and the toolbar's "Pages" entry are offered. It replaces
+direct calls to ``cms.permissions.page_permissions.user_can_change_at_least_one_page()``,
+so a contract now decides these, too. ``fresh=True`` asks for an answer that
+reflects permission changes saved earlier in the same request; backends without
+a cache may ignore it, but overrides must accept the keyword.
+
 Operation checks
 ================
 
