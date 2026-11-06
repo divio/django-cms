@@ -117,7 +117,7 @@
         "djangocms_history": "djangocms-history>=3",
         "rest_framework": "djangorestframework",
         "taggit": "django-taggit",
-        "treebeard": "django-treebeard<5"
+        "treebeard": "django-treebeard<6"
     },
     "template_dir": {
         "path": "templates",
