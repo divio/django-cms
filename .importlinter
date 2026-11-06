@@ -401,6 +401,8 @@ ignore_imports =
 # PageToolbar contributes to the shared menus by identifier, through the
 # pool-owned toolbar object. It may use the toolbar framework -- it is a
 # presentation layer -- but must not reach into the chrome classes.
+# Menu identifiers live in cms.toolbar.constants so this boundary can be
+# enforced at module level; import-linter cannot forbid individual classes.
 # ---------------------------------------------------------------------------
 [importlinter:contract:pages-toolbar-contributes]
 name = the page toolbar contributes to the chrome, it does not reach into it
@@ -410,6 +412,4 @@ source_modules =
     cms.pages.toolbar
 forbidden_modules =
     cms.cms_toolbars
-    cms.toolbar.chrome.AppearanceToolbar
-    cms.toolbar.chrome.BasicToolbar
-    cms.toolbar.chrome.HelpToolbar
+    cms.toolbar.chrome

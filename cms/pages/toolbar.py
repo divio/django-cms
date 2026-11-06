@@ -18,7 +18,7 @@ from cms.permissions import page_permissions
 from cms.permissions.page_permissions import user_can_change_page, user_can_delete_page
 from cms.shared.editing_urls import get_object_preview_url
 from cms.toolbar.base import CMSToolbar
-from cms.toolbar.chrome import ADMIN_MENU_IDENTIFIER, LANGUAGE_MENU_IDENTIFIER
+from cms.toolbar.constants import ADMIN_MENU_IDENTIFIER, LANGUAGE_MENU_IDENTIFIER
 from cms.toolbar.pool import toolbar_pool
 from cms.utils import get_language_from_request
 from cms.utils.conf import get_cms_setting
