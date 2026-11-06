@@ -782,9 +782,9 @@ class PlaceholderAdmin(BaseEditableAdminMixin, admin.ModelAdmin):
             root = (new_plugin.parent or new_plugin)
             new_plugins = [root] + list(root.get_descendants())
         if new_plugins:
-            data = get_plugin_tree(request, new_plugins, target_plugin=new_plugins[0]) 
+            data = get_plugin_tree(request, new_plugins, target_plugin=new_plugins[0])
         else:
-            data = {"html": "", "plugins": []}       
+            data = {"html": "", "plugins": []}
         if old_parent and old_parent not in new_plugins and "content" in data:
             # Update previous parent and its children
             old_parent_plugins = list(downcast_plugins([old_parent] + list(old_parent.get_descendants()), select_placeholder=True))
