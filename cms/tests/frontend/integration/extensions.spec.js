@@ -39,9 +39,11 @@ for (const extension of [
 
         // Reopen from a fresh toolbar to verify persistence and the change URL.
         await page.goto(editUrl);
+        await page.waitForLoadState('networkidle');
         const reopened = await openExtension();
         await expect(reopened.locator(`#id_${extension.field}`)).toHaveValue(value);
         await page.goto(editUrl);
+        await page.waitForLoadState('networkidle');
       });
     }
     expect(errors).toEqual([]);

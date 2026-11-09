@@ -334,6 +334,47 @@ class ExtensionAdminTestCase(CMSTestCase):
                         response = self.client.get(url)
                         self.assertRedirects(response, expected, fetch_redirect_response=False)
 
+    def test_extension_popup_responses(self):
+        """CMS iframe saves close without executing Django's window.opener callbacks."""
+        cases = (
+            (MyPageExtension, self.page_without_extension, 'extra'),
+            (MyPageContentExtension, self.page_title_without_extension, 'extra_title'),
+        )
+        with self.login_user_context(self.admin):
+            for model, extended_object, field in cases:
+                for cms_modal in (True, False):
+                    query = '?_popup=1'
+                    if cms_modal:
+                        query += '&cms_path=/'
+                    opts = model._meta
+                    prefix = f'{opts.app_label}_{opts.model_name}'
+                    for action in ('add', 'change', 'delete'):
+                        with self.subTest(model=model, cms_modal=cms_modal, action=action):
+                            if action == 'add':
+                                url = admin_reverse(f'{prefix}_add')
+                                url += query + f'&extended_object={extended_object.pk}'
+                                data = {field: 'created', '_popup': '1'}
+                            else:
+                                extension = model.objects.get(extended_object=extended_object)
+                                url = admin_reverse(f'{prefix}_{action}', args=(extension.pk,)) + query
+                                data = {'post': 'yes', '_popup': '1'} if action == 'delete' else {
+                                    field: 'updated', '_popup': '1',
+                                }
+                            response = self.client.post(url, data)
+                            self.assertEqual(response.status_code, 200)
+                            if cms_modal:
+                                self.assertContains(response, 'class="cms-close-frame"')
+                                self.assertContains(response, 'class="success"')
+                                self.assertNotContains(response, 'admin/js/popup_response.js')
+                            else:
+                                self.assertContains(response, 'admin/js/popup_response.js')
+                                self.assertNotContains(response, 'cms-close-frame')
+                            if action == 'delete':
+                                self.assertFalse(model.objects.filter(extended_object=extended_object).exists())
+                            else:
+                                extension = model.objects.get(extended_object=extended_object)
+                                self.assertEqual(getattr(extension, field), data[field])
+
     def test_duplicate_extensions(self):
         with self.login_user_context(self.admin):
             content = self.get_pagecontent_obj(self.page, 'en')
