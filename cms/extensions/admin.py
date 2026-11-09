@@ -50,13 +50,17 @@ class PageExtensionAdmin(ExtensionAdmin):
     @csrf_protect_m
     def add_view(self, request, form_url='', extra_context=None):
         """
-        Check if the page already has an extension object. If so, redirect to edit view instead.
+        Redirect an existing extension to its edit view, or process a stale add POST there.
         """
         extended_object_id = request.GET.get('extended_object', False)
         if extended_object_id:
             try:
                 page = Page.objects.get(pk=extended_object_id)
                 extension = self.model.objects.get(extended_object=page)
+                if request.method == 'POST':
+                    # Django's change popup response reads the original ID from the URL match.
+                    request.resolver_match.kwargs['object_id'] = str(extension.pk)
+                    return self.change_view(request, str(extension.pk), form_url, extra_context)
                 opts = self.model._meta
                 change_url = reverse(
                     f'admin:{opts.app_label}_{opts.model_name}_change',
@@ -92,13 +96,17 @@ class PageContentExtensionAdmin(ExtensionAdmin):
     @csrf_protect_m
     def add_view(self, request, form_url='', extra_context=None):
         """
-        Check if the page already has an extension object. If so, redirect to edit view instead.
+        Redirect an existing extension to its edit view, or process a stale add POST there.
         """
         extended_object_id = request.GET.get('extended_object', False)
         if extended_object_id:
             try:
                 content = PageContent.admin_manager.get(pk=extended_object_id)
                 extension = self.model.objects.get(extended_object=content)
+                if request.method == 'POST':
+                    # Django's change popup response reads the original ID from the URL match.
+                    request.resolver_match.kwargs['object_id'] = str(extension.pk)
+                    return self.change_view(request, str(extension.pk), form_url, extra_context)
                 opts = self.model._meta
                 change_url = reverse(
                     f'admin:{opts.app_label}_{opts.model_name}_change',

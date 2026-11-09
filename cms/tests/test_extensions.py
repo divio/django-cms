@@ -334,6 +334,52 @@ class ExtensionAdminTestCase(CMSTestCase):
                         response = self.client.get(url)
                         self.assertRedirects(response, expected, fetch_redirect_response=False)
 
+    def test_existing_extension_add_submission_updates_extension(self):
+        """A stale add form must save its POST after another editor creates the extension."""
+        cases = (
+            (self.page_extension, 'extra'),
+            (self.title_extension, 'extra_title'),
+        )
+        with self.login_user_context(self.admin):
+            for extension, field in cases:
+                with self.subTest(model=type(extension)):
+                    model = type(extension)
+                    count = model.objects.count()
+                    opts = model._meta
+                    url = admin_reverse(f'{opts.app_label}_{opts.model_name}_add') + '?' + urlencode({
+                        'extended_object': extension.extended_object_id,
+                        '_popup': '1',
+                        'cms_path': '/en/?edit',
+                    })
+                    response = self.client.post(url, {field: 'second editor', '_save': '1', '_popup': '1'})
+                    self.assertContains(response, 'class="cms-close-frame"')
+                    self.assertNotContains(response, 'admin/js/popup_response.js')
+                    extension.refresh_from_db()
+                    self.assertEqual(getattr(extension, field), 'second editor')
+                    self.assertEqual(model.objects.count(), count)
+
+                    # Invalid submissions stay in the form and preserve the saved value.
+                    response = self.client.post(url, {field: 'x' * 256, '_save': '1', '_popup': '1'})
+                    self.assertEqual(response.status_code, 200)
+                    self.assertTrue(response.context['adminform'].form.errors)
+                    self.assertNotContains(response, 'class="cms-close-frame"')
+                    extension.refresh_from_db()
+                    self.assertEqual(getattr(extension, field), 'second editor')
+
+        with self.login_user_context(self.no_page_permission_user):
+            for extension, field in cases:
+                with self.subTest(model=type(extension), permission=False):
+                    opts = extension._meta
+                    url = admin_reverse(f'{opts.app_label}_{opts.model_name}_add') + '?' + urlencode({
+                        'extended_object': extension.extended_object_id,
+                        '_popup': '1',
+                        'cms_path': '/en/?edit',
+                    })
+                    response = self.client.post(url, {field: 'unauthorized', '_popup': '1'})
+                    self.assertEqual(response.status_code, 403)
+                    extension.refresh_from_db()
+                    self.assertEqual(getattr(extension, field), 'second editor')
+
     def test_extension_popup_responses(self):
         """CMS iframe saves close without executing Django's window.opener callbacks."""
         cases = (
