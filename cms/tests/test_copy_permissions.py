@@ -212,6 +212,10 @@ class CopyPermissionsTests(CMSTestCase):
         self.assertFalse(response.context["has_change_permission"])
         self.assertFalse(response.context["has_move_page_permission"])
         self.assertFalse(response.context["has_delete_permission"])
+        # The rendered menu must offer Copy as actionable, not merely set the
+        # context flag, so a template regression that gates Copy on change
+        # permission would be caught here.
+        self.assertContains(response, "js-cms-tree-item-copy")
 
     def test_actions_menu_denied_for_unreadable_page(self):
         with self.login_user_context(self.actor):
