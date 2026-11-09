@@ -53,7 +53,7 @@ from cms.admin.forms import (
 )
 from cms.admin.permissionadmin import PERMISSION_ADMIN_INLINES
 from cms.cache.permissions import clear_permission_cache
-from cms.constants import MODAL_HTML_REDIRECT
+from cms.constants import GRANT_ALL_PERMISSIONS, MODAL_HTML_REDIRECT
 from cms.models import (
     CMSPlugin,
     GlobalPagePermission,
@@ -64,7 +64,6 @@ from cms.models import (
     Placeholder,
 )
 from cms.models.pagemodel import AdminCacheDict
-from cms.models.permissionmodels import PermissionTuple
 from cms.operations.helpers import (
     send_post_page_operation,
     send_pre_page_operation,
@@ -466,7 +465,7 @@ class PageAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
 
         clear_permission_cache()
 
-        if obj.application_urls:
+        if any(page.application_urls for page in cms_pages):
             set_restart_trigger()
 
     def get_copy_dialog(self, request, page_id):
@@ -646,8 +645,7 @@ class PageAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
             if can_change_global_permissions:
                 can_change = True
             else:
-                page_path = permission.page.path
-                can_change = any(PermissionTuple(perm_tuple).contains(page_path) for perm_tuple in allowed_pages)
+                can_change = allowed_pages == GRANT_ALL_PERMISSIONS or allowed_pages.contains(permission.page.path)
 
             row = PermissionRow(
                 is_global=False,
@@ -735,6 +733,12 @@ class PageAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
 
         if not translation:
             raise Http404("No translation matches requested language.")
+
+        # Check the content object through the PageContent admin, too: content
+        # managers (e.g., djangocms-versioning) restrict changes there
+        content_admin = admin.site._registry.get(PageContent)
+        if content_admin and not content_admin.has_change_permission(request, obj=translation):
+            return HttpResponseForbidden(_("You do not have permission to edit this page"))
 
         saved_successfully = False
         raw_fields = request.GET.get("edit_fields", "title")
@@ -905,6 +909,15 @@ class PageContentAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
 
         if obj is None:
             raise self._get_404_exception(object_id)
+
+        # ``add_view`` only checks that the user may add a page on the destination
+        # site. The source is read through the admin, so require what the admin
+        # requires to show it: CMS change permission on ``obj.page``, resolved
+        # against the page's own site. ``has_view_permission`` (overridden below,
+        # not Django's model-level check) is used rather than
+        # ``has_change_permission`` because djangocms-versioning does not touch it.
+        if not self.has_view_permission(request, obj):
+            raise PermissionDenied
 
         if request.method == "GET":
             # source is a field in the form

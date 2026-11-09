@@ -1,8 +1,10 @@
 import sys
 import types
 import uuid
+from copy import deepcopy
 
 from django.apps import apps
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
@@ -10,13 +12,14 @@ from django.contrib.sites.models import Site
 from django.core import checks
 from django.core.cache import cache
 from django.core.checks.urls import check_url_config
+from django.core.signals import request_finished
 from django.http import Http404, HttpResponse
 from django.shortcuts import render
 from django.template import Context, Template
 from django.template.response import TemplateResponse
 from django.test import RequestFactory, SimpleTestCase
 from django.test.utils import override_settings
-from django.urls import NoReverseMatch, clear_url_caches, include, path, resolve, reverse
+from django.urls import NoReverseMatch, Resolver404, clear_url_caches, include, path, resolve, reverse
 from django.utils.timezone import now
 from django.utils.translation import activate, override as force_language
 from django.views.generic import TemplateView
@@ -27,7 +30,8 @@ from cms.app_base import CMSApp
 from cms.apphook_pool import apphook_pool
 from cms.appresolver import applications_page_check, clear_app_resolvers, get_app_patterns
 from cms.middleware.page import get_page
-from cms.models import PageContent
+from cms.models import Page, PageContent
+from cms.signals.apphook import DISPATCH_UID
 from cms.test_utils.project.placeholderapp.models import Example1
 from cms.test_utils.testcases import CMSTestCase
 from cms.tests.test_menu_utils import DumbPageLanguageUrl
@@ -662,6 +666,127 @@ class ApphooksTestCase(BaseApphooksTestCase):
             # the remaining apphook still resolves, i.e. the pathless page was skipped
             # rather than the whole pattern list being abandoned
             self.assertEqual(urlpatterns[0].reverse('sample-root'), 'live-app/')
+
+    @override_settings(CMS_PERMISSION=False, ROOT_URLCONF='cms.test_utils.project.urls')
+    def test_apphook_sub_url_redirects_to_fallback_language(self):
+        # The apphook page has no German URL: app sub-URLs in German redirect to
+        # the same sub-URL in the fallback language (de falls back to en)
+        home = self.create_homepage("home", "nav_playground.html", "en")
+        create_page("blog", "nav_playground.html", "en", parent=home, apphook=APP_NAME)
+        self.reload_urls()
+
+        response = self.client.get("/de/blog/settings/?page=2")
+
+        self.assertRedirects(
+            response, "/en/blog/settings/?page=2", status_code=302, fetch_redirect_response=False
+        )
+
+    @override_settings(CMS_PERMISSION=False, ROOT_URLCONF='cms.test_utils.project.urls')
+    def test_apphook_fallback_redirect_applies_page_permissions(self):
+        # Fallback routes are subject to the same access checks as the app's patterns:
+        # anonymous users are sent to the login page instead of the fallback URL
+        home = self.create_homepage("home", "nav_playground.html", "en")
+        create_page("blog", "nav_playground.html", "en", parent=home, apphook=APP_NAME, login_required=True)
+        self.reload_urls()
+
+        response = self.client.get("/de/blog/settings/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(settings.LOGIN_URL, response["Location"])
+
+        with self.login_user_context(self.get_superuser()):
+            response = self.client.get("/de/blog/settings/")
+
+        self.assertRedirects(response, "/en/blog/settings/", status_code=302, fetch_redirect_response=False)
+
+    @override_settings(CMS_PERMISSION=False, ROOT_URLCONF='cms.test_utils.project.urls')
+    def test_apphook_fallback_redirect_hides_non_public_languages(self):
+        # Like pages, languages which are not public are only available to staff
+        languages = deepcopy(settings.CMS_LANGUAGES)
+        for language in languages[1]:
+            if language["code"] == "de":
+                language["public"] = False
+        home = self.create_homepage("home", "nav_playground.html", "en")
+        create_page("blog", "nav_playground.html", "en", parent=home, apphook=APP_NAME)
+
+        with self.settings(CMS_LANGUAGES=languages):
+            self.reload_urls()
+            response = self.client.get("/de/blog/settings/")
+            self.assertEqual(response.status_code, 404)
+
+            with self.login_user_context(self.get_superuser()):
+                response = self.client.get("/de/blog/settings/")
+            self.assertRedirects(response, "/en/blog/settings/", status_code=302, fetch_redirect_response=False)
+
+    @override_settings(CMS_PERMISSION=False, ROOT_URLCONF='cms.test_utils.project.urls')
+    def test_apphook_page_root_is_not_redirected_by_fallback_patterns(self):
+        # The page root stays with cms.views.details and redirect_on_fallback
+        home = self.create_homepage("home", "nav_playground.html", "en")
+        create_page("blog", "nav_playground.html", "en", parent=home, apphook=APP_NAME)
+        self.reload_urls()
+
+        with force_language("de"):
+            resolver = get_app_patterns()[0]
+            with self.assertRaises(Resolver404):
+                resolver.resolve("blog/")
+            self.assertEqual(resolver.resolve("blog/settings/").kwargs, {"rest": "settings/"})
+
+    @override_settings(CMS_PERMISSION=False, ROOT_URLCONF='cms.test_utils.project.urls')
+    def test_apphook_sub_url_served_once_language_is_published(self):
+        home = self.create_homepage("home", "nav_playground.html", "en")
+        blog = create_page("blog", "nav_playground.html", "en", parent=home, apphook=APP_NAME)
+        create_page_content("de", "Blog", blog, slug="blog")
+        self.reload_urls()
+
+        response = self.client.get("/de/blog/settings/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "sample settings page")
+
+    @override_settings(CMS_PERMISSION=False, ROOT_URLCONF='cms.test_utils.project.urls')
+    def test_apphook_fallback_does_not_shadow_pages_in_language(self):
+        # Another page published in German at the apphook page's path takes precedence
+        home = self.create_homepage("home", "nav_playground.html", "en")
+        create_page("blog", "nav_playground.html", "en", parent=home, apphook=APP_NAME)
+        other = create_page("other", "nav_playground.html", "en", parent=home)
+        create_page_content("de", "Blog", other, slug="blog")
+        self.reload_urls()
+
+        with force_language("de"):
+            self.assertEqual(get_app_patterns()[0].url_patterns, [])
+
+    @override_settings(CMS_PERMISSION=False, ROOT_URLCONF='cms.test_utils.project.urls')
+    def test_apphook_on_home_page_has_no_fallback_redirect(self):
+        # A catch-all below the home page would capture every URL of the language
+        self.create_homepage("home", "nav_playground.html", "en", apphook=APP_NAME)
+        self.reload_urls()
+
+        with force_language("de"):
+            self.assertEqual(get_app_patterns()[0].url_patterns, [])
+
+    @override_settings(
+        CMS_PERMISSION=False,
+        ROOT_URLCONF='cms.test_utils.project.urls',
+        MIDDLEWARE=['cms.middleware.utils.ApphookReloadMiddleware', *settings.MIDDLEWARE],
+    )
+    def test_apphook_urls_follow_moved_page(self):
+        # Moving a page changes the urls of its apphook: the reload middleware has
+        # to serve them at the new location without a server restart
+        parent_1 = create_page("parent-1", "nav_playground.html", "en")
+        parent_2 = create_page("parent-2", "nav_playground.html", "en")
+        page = create_page("blog", "nav_playground.html", "en", parent=parent_1, apphook=APP_NAME)
+        # Creating the page scheduled a reload for the end of the next request. Drop
+        # it: the app's url patterns are built by the request below.
+        request_finished.disconnect(dispatch_uid=DISPATCH_UID)
+        self.assertEqual(self.client.get("/en/parent-1/blog/extra_1/").status_code, 200)
+
+        with self.login_user_context(self.get_superuser()):
+            endpoint = self.get_admin_url(Page, "move_page", page.pk)
+            response = self.client.post(endpoint, {"id": page.pk, "position": 0, "target": parent_2.pk})
+        self.assertEqual(response.json()["status"], 200)
+
+        self.assertEqual(self.client.get("/en/parent-2/blog/extra_1/").status_code, 200)
+        self.assertEqual(self.client.get("/en/parent-1/blog/extra_1/").status_code, 404)
 
     @override_settings(ROOT_URLCONF='cms.test_utils.project.urls')
     def test_apphook_urlpattern_order(self):

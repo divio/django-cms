@@ -28,6 +28,27 @@ from menus.menu_pool import menu_pool
 logger = getLogger(__name__)
 
 
+def _clear_permission_cache_on_tree_change():
+    """Invalidate cached page permissions after page paths changed.
+
+    The permission cache stores grants by page path. Without invalidation, a
+    cached grant would match whichever page took over the path of the granted
+    page, and stop matching the granted page itself.
+
+    Invalidation is deferred to commit only. Clearing the shared cache
+    immediately would let a permission check later in the same transaction
+    repopulate it from the uncommitted paths; if that transaction then rolls
+    back, Django discards the ``on_commit`` callback and the stale paths would
+    survive against the restored tree until the cache expires.
+    """
+    if not get_cms_setting("PERMISSION"):
+        return
+
+    from cms.cache.permissions import clear_permission_cache
+
+    transaction.on_commit(clear_permission_cache)
+
+
 def _lock_tree_roots(*pages):
     # Serializes concurrent URL path updates by taking a row-level lock on the
     # tree root(s) of the given pages, which prevents deadlocks on cms_pageurl.
@@ -193,12 +214,25 @@ class Page(MP_Node):
             kwargs["parent"] = self
         return super().add_child(**kwargs)
 
-    def add_sibling(self, pos=None, *args, **kwargs):
+    def add_sibling(self, pos="last-sibling", *args, **kwargs):
         if len(kwargs) == 1 and "instance" in kwargs:
             kwargs["instance"].parent_id = self.parent_id
         else:
             kwargs["parent_id"] = self.parent_id
-        return super().add_sibling(*args, **kwargs)
+        new_page = super().add_sibling(pos, *args, **kwargs)
+        # Inserting between siblings renumbers the paths of those after it.
+        _clear_permission_cache_on_tree_change()
+        return new_page
+
+    def move(self, *args, **kwargs):
+        super().move(*args, **kwargs)
+        _clear_permission_cache_on_tree_change()
+
+    @classmethod
+    def fix_tree(cls, *args, **kwargs):
+        result = super().fix_tree(*args, **kwargs)
+        _clear_permission_cache_on_tree_change()
+        return result
 
     def get_cached_ancestors(self):
         if self._has_cached_hierarchy():
@@ -467,12 +501,24 @@ class Page(MP_Node):
         _lock_tree_roots(self)
 
         languages = self.urls.values_list("language", flat=True)
+        old_paths = dict(self.urls.values_list("language", "path"))
 
         for language in languages:
             if not self.is_home:
                 self._update_url_path(language)
+                # Descendant paths derive from this page's path: drop the cached URLs, which
+                # are fetched together with the fallback languages and may hold the old path
+                self.urls_cache = {}
             self._update_url_path_recursive(language)
         self.clear_cache(menu=True)
+
+        new_paths = dict(self.urls.values_list("language", "path"))
+        if new_paths != old_paths and self.__class__.get_tree(self).has_apphooks():
+            # Apphook patterns are built from the PageUrl table: reload them if the
+            # URLs of this page, from which those of its descendants derive, changed
+            from cms.signals.apphook import set_restart_trigger
+
+            set_restart_trigger()
         return self
 
     def _clear_placeholders(self, language):
@@ -1019,6 +1065,16 @@ class Page(MP_Node):
 
         self.urls_cache = {}
         self._update_url_path_recursive(language)
+
+        if (
+            self.application_urls
+            or self.get_descendants().exclude(application_urls__isnull=True).exclude(application_urls="").exists()
+        ):
+            # Apphook patterns are built from the PageUrl table: reload them
+            # once the URL of this page (or a descendant) has changed
+            from cms.signals.apphook import set_restart_trigger
+
+            set_restart_trigger()
 
     def get_fallbacks(self, language):
         return i18n.get_fallback_languages(language, site_id=self.site_id)
