@@ -13,6 +13,7 @@ from cms.utils.urlutils import static_with_version
 class ExtensionAdmin(admin.ModelAdmin):
     change_form_template = "admin/cms/extensions/change_form.html"
     add_form_template = "admin/cms/extensions/change_form.html"
+    popup_response_template = "admin/cms/extensions/popup_response.html"
 
     class Media:
         css = {"all": (static_with_version("cms/css/cms.admin.css"),)}
