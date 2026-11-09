@@ -77,7 +77,7 @@ class ExtensionToolbar(CMSToolbar):
         If there is no page content, both values are None.
         """
         self._get_page()
-        page_content = page_content_obj or self.page_content
+        page_content = self.page_content if page_content_obj is None else page_content_obj
         if not page_content:
             return None, None
         try:

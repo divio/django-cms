@@ -300,6 +300,21 @@ class ExtensionAdminTestCase(CMSTestCase):
                     toolbar.page_content = content
                     self.assertEqual(toolbar.get_page_content_extension_admin(), (None, None))
 
+    def test_explicit_missing_translation_does_not_use_toolbar_content(self):
+        request = self.get_request(language='en', page=self.page)
+        toolbar = ExtensionToolbar(request, Mock(get_object=Mock(return_value=self.page_title)), False, '')
+        toolbar.model = MyPageContentExtension
+        missing_content = EmptyPageContent(language='fr', page=self.page)
+        with self.assertNumQueries(0):
+            self.assertEqual(toolbar.get_page_content_extension_admin(missing_content), (None, None))
+        self.assertEqual(
+            toolbar.get_page_content_extension_admin(),
+            (
+                self.title_extension,
+                admin_reverse('extensionapp_mypagecontentextension_change', args=(self.title_extension.pk,)),
+            ),
+        )
+
     def test_existing_extension_redirect_preserves_popup_context(self):
         cases = (
             ('mypageextension', self.page, self.page_extension),
