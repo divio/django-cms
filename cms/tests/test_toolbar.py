@@ -1089,9 +1089,9 @@ class ToolbarTests(ToolbarTestBase):
         toolbar.populated = False
         toolbar.post_template_populate()
         get_object_for_language(page_content, "de")
-        admin_menu = toolbar.get_left_items()[0]
-        help_menu = toolbar.get_left_items()[1]
-        lang_menu = toolbar.get_left_items()[2]
+        admin_menu = toolbar.get_menu(ADMIN_MENU_IDENTIFIER)
+        help_menu = toolbar.get_menu(HELP_MENU_IDENTIFIER)
+        lang_menu = toolbar.get_menu(LANGUAGE_MENU_IDENTIFIER)
         self.assertEqual(len(admin_menu.get_items()), 15)
         self.assertEqual(
             list(DEFAULT_HELP_MENU_ITEMS),
