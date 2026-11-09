@@ -700,6 +700,35 @@ class RequestFreeServiceTest(CMSTestCase):
     def _context(self, **kwargs):
         return OperationContext(user=self.user, language="en", origin="/en/", **kwargs)
 
+    def test_paste_empty_placeholder_is_a_noop(self):
+        clipboard = Placeholder.objects.create(slot="clipboard")
+        plugin = add_plugin(clipboard, "PlaceholderPlugin", "en")
+        existing = add_plugin(self.placeholder, "LinkPlugin", "en", name="existing")
+        before = list(self.placeholder.get_plugins("en").values_list("pk", "position"))
+
+        result = plugin_services.paste_placeholder(
+            plugin, "en", self.placeholder, existing.position, context=self._context()
+        )
+
+        self.assertEqual(result, [])
+        self.assertEqual(
+            list(self.placeholder.get_plugins("en").values_list("pk", "position")), before
+        )
+        self.assertFalse(plugin.placeholder_ref.get_plugins().exists())
+
+    def test_paste_empty_placeholder_requires_permission(self):
+        clipboard = Placeholder.objects.create(slot="clipboard")
+        plugin = add_plugin(clipboard, "PlaceholderPlugin", "en")
+        actor = self.get_staff_user_with_no_permissions()
+
+        with self.assertRaises(PermissionDenied):
+            plugin_services.paste_placeholder(
+                plugin, "en", self.placeholder, 1,
+                context=OperationContext(user=actor, language="en"),
+            )
+
+        self.assertFalse(self.placeholder.get_plugins().exists())
+
     def test_add_page_service_creates_content_without_a_request(self):
         content = page_services.add_page(
             site=self.page.site,

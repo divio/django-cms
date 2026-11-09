@@ -459,6 +459,9 @@ def paste_placeholder(
         target_language=target_language,
         target_placeholder=target_placeholder,
     ) as signal_kwargs:
+        if not plugins:
+            return []
+
         _make_room(target_placeholder, target_language, target_position, len(plugins))
 
         new_plugins = copy_plugins_to_placeholder(

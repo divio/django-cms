@@ -34,20 +34,22 @@ from cms.pages.toolbar import (
     PageToolbar,
 )
 from cms.toolbar.chrome import (
+    DEFAULT_HELP_MENU_ITEMS,
+    AppearanceToolbar,
+    BasicToolbar,
+    HelpToolbar,
+)
+from cms.toolbar.constants import (
     ADMIN_MENU_IDENTIFIER,
     ADMIN_SITES_BREAK,
     ADMINISTRATION_BREAK,
     CLIPBOARD_BREAK,
-    DEFAULT_HELP_MENU_ITEMS,
     HELP_MENU_BREAK,
     HELP_MENU_IDENTIFIER,
     LANGUAGE_MENU_IDENTIFIER,
     SHORTCUTS_BREAK,
     TOOLBAR_DISABLE_BREAK,
     USER_SETTINGS_BREAK,
-    AppearanceToolbar,
-    BasicToolbar,
-    HelpToolbar,
 )
 
 __all__ = [

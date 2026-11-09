@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from collections import namedtuple
 
@@ -23,6 +22,7 @@ from django.http import (
     HttpResponseBadRequest,
     HttpResponseForbidden,
     HttpResponseRedirect,
+    JsonResponse,
     QueryDict,
 )
 from django.shortcuts import get_object_or_404, render
@@ -167,10 +167,7 @@ class PageAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
         if obj is None:
             site = get_site_from_request(request)
             # Checks if user can change at least one page
-            return page_permissions.user_can_change_at_least_one_page(
-                user=request.user,
-                site=site,
-            )
+            return get_page_permissions(request.user).can_change_any_page(site)
         return get_page_permissions(request.user).can_change_page(obj)
 
     def has_change_advanced_settings_permission(self, request, obj=None):
@@ -349,11 +346,8 @@ class PageAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
         Figure out where to redirect after the 'Save' button has been pressed
         when adding a new object.
         """
-        can_change_any_page = page_permissions.user_can_change_at_least_one_page(
-            user=request.user,
-            site=obj.site,
-            use_cache=False,
-        )
+        # Answer from the permissions as saved by this very request
+        can_change_any_page = get_page_permissions(request.user).can_change_any_page(obj.site, fresh=True)
 
         if can_change_any_page:
             query = self.get_preserved_filters(request)
@@ -395,7 +389,7 @@ class PageAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
             if not query_term:
                 # ``icontains`` matches every page for an empty term, which would
                 # turn this autocomplete into a full listing of the site.
-                return HttpResponse(json.dumps([]), content_type="application/json")
+                return JsonResponse([], safe=False)
 
             language_code = request.GET.get("language_code", settings.LANGUAGE_CODE)
             matching_pages = (
@@ -421,7 +415,7 @@ class PageAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
                         "redirect_url": page.get_absolute_url(language=language_code),
                     }
                 )
-            return HttpResponse(json.dumps(results), content_type="application/json")
+            return JsonResponse(results, safe=False)
         return HttpResponseForbidden()
 
     def changelist_view(self, request, extra_context=None):
@@ -646,7 +640,7 @@ class PageAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
             return jsonify_request(HttpResponseForbidden(str(error)))
         except ValidationError as error:
             return jsonify_request(HttpResponseBadRequest(" ".join(error.messages)))
-        return HttpResponse(json.dumps({"id": new_page.pk}), content_type="application/json")
+        return JsonResponse({"id": new_page.pk})
 
     def edit_title_fields(self, request, page_id, language):
         page = self.get_object(request, object_id=page_id)
@@ -1012,10 +1006,7 @@ class PageContentAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
 
         if obj:
             return get_page_permissions(request.user).can_change_content(obj)
-        return page_permissions.user_can_change_at_least_one_page(
-            user=request.user,
-            site=get_site_from_request(request),
-        )
+        return get_page_permissions(request.user).can_change_any_page(get_site_from_request(request))
 
     def has_view_permission(self, request, obj=None):
         """
@@ -1027,11 +1018,7 @@ class PageContentAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
 
         if obj:
             return get_page_permissions(request.user).can_change_page(obj.page)
-        return page_permissions.user_can_change_at_least_one_page(
-            user=request.user,
-            site=get_site_from_request(request),
-            use_cache=False,
-        )
+        return get_page_permissions(request.user).can_change_any_page(get_site_from_request(request), fresh=True)
 
     def has_delete_permission(self, request, obj=None):
         """
@@ -1059,12 +1046,8 @@ class PageContentAdmin(PageDeleteMessageMixin, admin.ModelAdmin):
             return user._cms_user_sites
 
         sites = Site.objects.order_by("name")
-        if not get_cms_setting("PERMISSION") or user.is_superuser:
-            user._cms_user_sites = sites
-            return sites
-
-        _has_perm = page_permissions.user_can_change_at_least_one_page
-        user_sites = [site for site in sites if _has_perm(user, site)]
+        backend = get_page_permissions(user)
+        user_sites = [site for site in sites if backend.can_change_any_page(site)]
         user._cms_user_sites = user_sites
         return user_sites
 

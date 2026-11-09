@@ -23,7 +23,13 @@ from cms.core import checks as core_checks
 from cms.core.models.placeholder import Placeholder
 from cms.models import PageContent, PageUrl, UserSettings
 from cms.pages.models.page import Page
-from cms.pages.permissions import AdminPageContentPermissions, AdminPagePermissions, PagePermissions
+from cms.pages.permissions import (
+    AdminPageContentPermissions,
+    AdminPagePermissions,
+    BackendPagePermissions,
+    PagePermissions,
+)
+from cms.pages.toolbar import ADMIN_MENU_IDENTIFIER, PageToolbar
 from cms.permissions.models import GlobalPagePermission, PagePermission
 from cms.shared import checks as shared_checks
 from cms.shared.checks import OperationBlocked
@@ -34,6 +40,7 @@ from cms.test_utils.testcases import (
     URL_CMS_PAGE_PUBLISHED,
     CMSTestCase,
 )
+from cms.toolbar.toolbar import CMSToolbar
 from cms.utils.conf import get_cms_setting
 from cms.utils.i18n import get_language_list
 from cms.utils.urlutils import admin_reverse
@@ -699,8 +706,17 @@ class ReadOnlyContentPermissions(PagePermissions):
         return False
 
 
+class NoPagesPermissions(ReadOnlyContentPermissions):
+    """A ``page_permissions`` contract under which no page on any site may be changed."""
+
+    def can_change_any_page(self, site, *, fresh=False):
+        return False
+
+
 class PagePermissionContractAdminTests(AdminTestsBase):
     """A ``page_permissions`` contract decides admin requests, too."""
+
+    contract = ReadOnlyContentPermissions
 
     def setUp(self):
         super().setUp()
@@ -708,7 +724,7 @@ class PagePermissionContractAdminTests(AdminTestsBase):
         get_contract = CMSAppConfig.get_contract
 
         def contract(name):
-            return ReadOnlyContentPermissions if name == "page_permissions" else get_contract(name)
+            return self.contract if name == "page_permissions" else get_contract(name)
 
         patcher = patch.object(CMSAppConfig, "get_contract", side_effect=contract)
         patcher.start()
@@ -761,6 +777,125 @@ class PagePermissionContractAdminTests(AdminTestsBase):
 
         with patch.object(site._registry[Page], "has_move_page_permission", return_value=False):
             self.assertFalse(AdminPagePermissions(site._registry[Page], request).can_move_page(self.page))
+
+    def test_backend_adapter_delegates_can_change_any_page(self):
+        self.contract = NoPagesPermissions
+        superuser = self.get_superuser()
+        current_site = Site.objects.get_current()
+
+        self.assertFalse(BackendPagePermissions(superuser).can_change_any_page(current_site))
+        # The default backend still allows it
+        self.assertTrue(PagePermissions(superuser).can_change_any_page(current_site))
+
+    def test_admin_hooks_ask_the_contract_whether_any_page_may_be_changed(self):
+        self.contract = NoPagesPermissions
+        request = self.get_request()
+        request.user = self.get_superuser()
+        current_site = Site.objects.get_current()
+
+        self.assertFalse(site._registry[Page].has_change_permission(request, obj=None))
+        self.assertFalse(site._registry[PageContent].has_change_permission(request, obj=None))
+        self.assertFalse(site._registry[PageContent].has_view_permission(request, obj=None))
+        self.assertFalse(AdminPagePermissions(site._registry[Page], request).can_change_any_page(current_site))
+        self.assertFalse(
+            AdminPageContentPermissions(site._registry[PageContent], request).can_change_any_page(current_site)
+        )
+
+    def test_page_changelist_and_tree_respect_the_contract(self):
+        self.contract = NoPagesPermissions
+
+        with self.login_user_context(self.get_superuser()):
+            changelist = self.client.get(admin_reverse("cms_pagecontent_changelist"))
+            tree = self.client.get(admin_reverse("cms_pagecontent_get_tree"))
+
+        self.assertEqual(changelist.status_code, 403)
+        self.assertEqual(tree.status_code, 403)
+
+    @override_settings(CMS_PERMISSION=True)
+    def test_sites_for_user_respect_the_contract(self):
+        class AnyPagePermissions(PagePermissions):
+            def can_change_any_page(self, site, *, fresh=False):
+                return True
+
+        staff = self.get_staff_user_with_no_permissions()
+        self.assertEqual(site._registry[PageContent].get_sites_for_user(staff), [])
+
+        self.contract = AnyPagePermissions
+        staff = self.reload(staff)  # The sites are memoised on the user
+        self.assertEqual(site._registry[PageContent].get_sites_for_user(staff), list(Site.objects.order_by("name")))
+
+    def test_sites_for_user_filter_superusers_and_without_cms_permissions(self):
+        allowed_site = Site.objects.get_current()
+        Site.objects.create(domain="denied.example.com", name="Denied site")
+
+        class OneSitePermissions(PagePermissions):
+            def can_change_any_page(self, site, *, fresh=False):
+                return site.pk == allowed_site.pk
+
+        self.contract = OneSitePermissions
+        users = [self.get_superuser(), self.get_staff_user_with_no_permissions()]
+        for cms_permission in (True, False):
+            for user in users:
+                with self.subTest(cms_permission=cms_permission, superuser=user.is_superuser):
+                    with override_settings(CMS_PERMISSION=cms_permission):
+                        self.assertEqual(
+                            site._registry[PageContent].get_sites_for_user(self.reload(user)),
+                            [allowed_site],
+                        )
+
+    def test_toolbar_pages_entry_respects_contract_when_current_page_is_editable(self):
+        request = self.get_request(page=self.page)
+        request.user = self.get_superuser()
+        toolbar = CMSToolbar(request)
+        toolbar.populated = True  # Build just the page toolbar's menu below
+        toolbar.set_object(self.page.get_admin_content("en"))
+        page_toolbar = PageToolbar(request, toolbar, True, "cms")
+        page_toolbar.page = self.page
+        self.assertTrue(page_toolbar.has_page_change_permission())
+
+        self.contract = NoPagesPermissions
+        page_toolbar.change_admin_menu()
+        self.assertIsNone(toolbar.get_menu(ADMIN_MENU_IDENTIFIER))
+
+        self.contract = PagePermissions
+        page_toolbar.change_admin_menu()
+        self.assertIsNotNone(toolbar.get_menu(ADMIN_MENU_IDENTIFIER))
+
+    def test_admin_adapter_hooks_narrow_can_change_any_page(self):
+        request = self.get_request()
+        request.user = self.get_superuser()
+        current_site = Site.objects.get_current()
+        page_admin = site._registry[Page]
+
+        self.assertTrue(AdminPagePermissions(page_admin, request).can_change_any_page(current_site))
+        with patch.object(page_admin, "has_change_permission", return_value=False):
+            self.assertFalse(AdminPagePermissions(page_admin, request).can_change_any_page(current_site))
+
+    def test_default_backend_answers_can_change_any_page_as_before(self):
+        # The contract under test does not override the predicate: the default decides
+        request = self.get_request()
+        request.user = self.get_superuser()
+        target = "cms.permissions.page_permissions.user_can_change_at_least_one_page"
+
+        with patch(target, return_value=True) as check:
+            self.assertTrue(site._registry[Page].has_change_permission(request, obj=None))
+            self.assertTrue(site._registry[PageContent].has_change_permission(request, obj=None))
+            self.assertTrue(site._registry[PageContent].has_view_permission(request, obj=None))
+
+        current_site = Site.objects.get_current()
+        self.assertEqual(
+            [call.kwargs for call in check.call_args_list],
+            [
+                {"user": request.user, "site": current_site, "use_cache": True},
+                {"user": request.user, "site": current_site, "use_cache": True},
+                # Viewing must reflect permission changes made earlier in the request
+                {"user": request.user, "site": current_site, "use_cache": False},
+            ],
+        )
+
+        with self.login_user_context(self.get_superuser()):
+            self.assertEqual(self.client.get(admin_reverse("cms_pagecontent_changelist")).status_code, 200)
+            self.assertEqual(self.client.get(admin_reverse("cms_pagecontent_get_tree")).status_code, 200)
 
 
 class NoDBAdminTests(CMSTestCase):
