@@ -46,6 +46,7 @@ dependencies = [
   "django-formtools >=2.1",
   "django-treebeard >=4.3,<6",
   "django-sekizai >=0.7",
+  "packaging",
 ]
 
 [project.optional-dependencies]
