@@ -13,7 +13,6 @@ Start here
 ==========
 
 * Read the docs: `Documentation (stable) <https://docs.django-cms.org/>`_
-* Installing / learning: `Installation <https://docs.django-cms.org/en/latest/introduction/01-install.html>`_ · `Docker quickstart <https://github.com/django-cms/django-cms-quickstart>`_ · `Tutorials <https://docs.django-cms.org/en/latest/introduction/>`_
 * Upgrading: `Release notes / Upgrade guide <https://docs.django-cms.org/en/latest/upgrade/index.html>`_
 * Get help: `Discord <https://discord-support-channel.django-cms.org>`_ or Stackoverflow
 * Contribute safely: `Contributing <CONTRIBUTING.rst>`_ · `Code of Conduct <CODE_OF_CONDUCT.rst>`_ · `Security <SECURITY.md>`_
